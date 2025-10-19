@@ -1,0 +1,65 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15
+    container_name: postgres-paginacao
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: paginacao_db
+    ports:
+      - "5432:5432"
+    volumes:
+      # volume interno (sem conflito com Colima)
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - multibanco-net
+
+  mongo:
+    image: mongo:6
+    container_name: mongo-paginacao
+    ports:
+      - "27017:27017"
+    volumes:
+      # volume interno (sem conflito com Colima)
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - multibanco-net
+
+  # Aplicação Spring Boot
+  app:
+    build: .
+    container_name: poc-paginacao-multibanco
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: local
+    networks:
+      - multibanco-net
+
+# 🔗 Redes e volumes compartilhados
+networks:
+  multibanco-net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  mongo_data:
