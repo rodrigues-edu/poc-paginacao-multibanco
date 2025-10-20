@@ -1,0 +1,28 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "exames",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "paciente_id", "order": "ASCENDING" },
+        { "fieldPath": "data_coleta", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "exames",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status_exame", "order": "ASCENDING" },
+        { "fieldPath": "data_resultado", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "exames",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "created_at", "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}
