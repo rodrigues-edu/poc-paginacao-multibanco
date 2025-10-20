@@ -166,6 +166,119 @@ feature.database.active=postgres  # opções: postgres | mongo | firestore
    # Reiniciar ambiente e limpar volumes
    docker compose down -v && docker compose up -d
 ```
+---
+## 🧩 Geração e Importação dos Dados
+Para testar a performance da paginação, a POC utiliza uma massa de dados significativa (≈ 500.000 registros) gerada automaticamente em CSV e importada para PostgreSQL e MongoDB.
+
+### ⚙️ 1. Gerando o arquivo CSV
+A classe ExameDataCsvGenerator (localizada em
+`src/main/java/br/com/pesquisas/paginacao/infra/bootstrap/ExameDataCsvGenerator.java`)
+é responsável por gerar um arquivo de dados sintéticos com estrutura compatível com todas as bases da POC.
+
+Comando para executar:
+ ```bash
+   mvn exec:java -Dexec.mainClass="br.com.pesquisas.paginacao.infra.bootstrap.ExameDataCsvGenerator"
+```
+### 🧪 2. Verificando a geração
+ Após a execução, confirme a quantidade de linhas geradas:
+ ```bash
+   wc -l src/main/resources/data/exames.csv
+```
+✅ O valor esperado é 500.001 (inclui o cabeçalho + 500.000 registros).
+
+### ⚠️ 3. Evitando gerar novamente
+Após gerar a massa uma vez, desative o bean para não reprocessar a cada build.
+No arquivo `application.properties`:
+ ```properties
+   data.csv.generate=false
+```
+
+### 🐘 4. Importando para o PostgreSQL
+Com o container `postgres-paginacao` ativo, importe o CSV diretamente para a tabela `exames`:
+ ```bash
+    cat src/main/resources/data/exames.csv | docker exec -i postgres-paginacao \
+    psql -U postgres -d paginacao_db -c "\
+    COPY exames(
+        paciente_id,
+        nome_paciente,
+        tipo_exame,
+        status_exame,
+        valor_resultado,
+        data_coleta,
+        data_resultado,
+        laboratorio,
+        created_at
+    )
+    FROM STDIN
+    DELIMITER ','
+    CSV HEADER;"
+```
+#### 📌 Explicação:
+- `cat ... | docker exec -i` → Envia o conteúdo do CSV diretamente para dentro do container.
+- `psql -c "COPY ...` → Copia os dados para a tabela `exames` de forma otimizada.
+- `cat ... | docker exec -i` → Indica que a primeira linha contém os nomes das colunas.
+
+ **Observação** Se o volume do Postgres fosse **mapeado externamente**, o caminho seria, por exemplo: `/var/lib/postgresql/data/exames.csv` dentro do container.
+
+### 🍃 5. Importando para o MongoDB
+Como o container mongo-paginacao está sem autenticação, use o comando abaixo:
+ ```bash
+    docker exec -i mongo-paginacao \
+    mongoimport \
+      --db examesdb \
+      --collection exames \
+      --type csv \
+      --headerline \
+      --ignoreBlanks \
+      --drop \
+      --file /dev/stdin < src/main/resources/data/exames.csv
+```
+#### 📌 Explicação:
+- `--drop` → Apaga a collection antes de importar.
+- `--headerline` → Ignora células vazias.
+- `< src/...` → Injeta o CSV do host diretamente no container.
+
+**💡Dica** Se desejar ativar a autenticação no Mongo, basta adicionar:
+ ```bash
+   --username root --password example --authenticationDatabase admin
+```
+### 🔍 6. Verificando a importação
+#### PostgreSQL:
+ ```bash
+    docker exec -it postgres-paginacao \
+    psql -U postgres -d paginacao_db -c "SELECT COUNT(*) FROM exames;"
+```
+
+#### MongoDB:
+ ```bash
+    docker exec -it mongo-paginacao \
+    mongosh --eval "use examesdb; db.exames.countDocuments();"
+```
+✅ O resultado esperado é aproximadamente 500.000 registros em ambas as bases.
+
+### 📦 7. (Opcional) Estrutura dos dados
+Os dados são compostos por campos sintéticos com coerência mínima para simular uma base real de exames laboratoriais:
+
+| Campo           | Tipo     | Exemplo                 | Descrição                       |
+| --------------- | -------- | ----------------------- | ------------------------------- |
+| paciente_id     | UUID     | `2d91a12f-89ab-4bfa...` | Identificador único do paciente |
+| nome_paciente   | String   | `Maria Oliveira`        | Nome do paciente                |
+| tipo_exame      | String   | `Hemograma`             | Tipo do exame                   |
+| status_exame    | String   | `Concluído`             | Status atual                    |
+| valor_resultado | Decimal  | `142.3`                 | Valor numérico do resultado     |
+| data_coleta     | Date     | `2024-09-10`            | Data da coleta                  |
+| data_resultado  | Date     | `2024-09-12`            | Data do resultado               |
+| laboratorio     | String   | `Laboratório Central`   | Nome do laboratório             |
+| created_at      | DateTime | `2024-09-12T10:42:00`   | Timestamp de inserção           |
+
+### 🔧 8. Observações
+- Os volumes internos (mongo_data, postgres_data) são utilizados para evitar conflitos com o Colima (Foi utilizado um ambiente Mac para simulação).
+- Se quiser inspecionar os arquivos dentro do container, use:
+ ```bash
+    docker exec -it postgres-paginacao bash
+    docker exec -it mongo-paginacao bash
+```
+- Cada script e importação foi projetado para ser reproduzível e independente — ideal para POCs de performance.
 
 ---
 
